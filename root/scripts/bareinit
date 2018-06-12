@@ -1,0 +1,68 @@
+#!/bin/bash
+
+REPODIR="/home/git/repositories/_bare"
+
+#get dotfiles dir path from running file
+filepath=`readlink -f $0`;
+rootdir=${filepath%/*};
+
+# if [ -z "$1" ];
+# then
+# 	echo "Usage: sh $0 \$reponame(no .git) \$description";
+# 	exit 1;
+# fi;
+
+rpn="$1";
+shift;
+repodesc="$@";
+
+if [ -z "$rpn" ];
+then
+	read -p "Name(required, no .git): " rpn;
+	if [ -z "$rpn" ];
+	then
+	 	echo "Usage: sh $0 \$reponame(no .git) \$description";
+		exit 1;
+	else
+		:
+	fi;
+fi;
+
+reponame="$rpn.git";
+
+if [ -d "$REPODIR/$reponame" ];
+then
+	echo "Repository exists.";
+else
+	echo "Initializing git at: $REPODIR/$reponame";
+	mkdir -p "$REPODIR/$reponame";
+	cd "$REPODIR/$reponame";
+	#init bare git
+	git init --bare --shared;
+fi;
+
+
+# write description
+if [ -z "$repodesc" ];
+then
+	read -p "Description(optional):" repodesc;
+	if [ -z "$repodesc" ];
+	then
+		:
+	else
+		echo "Writing description";
+	        echo "$repodesc" > "$REPODIR/$reponame/description";
+	fi;
+else
+	echo "Writing description";
+        echo "$repodesc" > "$REPODIR/$reponame/description";
+fi;
+
+#copy post receive hook from rootdir;
+# echo "Copying post receive hook...";
+# cp "/defaults/hooks/post-receive-default" "$REPODIR/$reponame/hooks/post-receive";
+
+echo "Copying post update hook...";
+cp "/defaults/hooks/post-update-default" "$REPODIR/$reponame/hooks/post-update";
+
+#return 0;

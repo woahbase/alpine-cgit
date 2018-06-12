@@ -1,0 +1,33 @@
+#!/usr/bin/with-contenv bash
+
+[[ -f /etc/ssh/ssh_host_rsa_key ]] && echo 'Found hostkeys' || (
+    echo "Generating host keys.";
+    ssh-keygen -t rsa -b 1024 -N "" -f /etc/ssh/ssh_host_rsa_key;
+    ssh-keygen -t dsa -b 1024 -N "" -f /etc/ssh/ssh_host_dsa_key;
+    ssh-keygen -t ecdsa -b 521 -N "" -f /etc/ssh/ssh_host_ecdsa_key;
+    ssh-keygen -t ed25519 -b 512 -N "" -f /etc/ssh/ssh_host_ed25519_key;
+)
+
+[[ -f /etc/ssh/sshd_config ]] && echo "Foung SSHd config" || (
+    cp /defaults/sshd_config /etc/ssh/sshd_config;
+)
+
+chown git:git /home/git/ # if not existing, sometimes docker mounts this dir as root:root
+
+[[ -f /home/git/.ssh/id_rsa ]] && echo "Foung git keys" || (
+    s6-setuidgid git mkdir -p /home/git/.ssh;
+    s6-setuidgid git ssh-keygen -t rsa -b 1024 -N "" -f /home/git/.ssh/id_rsa;
+)
+
+[[ -f /home/git/.ssh/authorized_keys ]] && echo 'Found authorized keys' || (
+    echo "Setup authorized_keys";
+    s6-setuidgid git cat /home/git/.ssh/id_rsa.pub >> /home/git/.ssh/authorized_keys;
+    chown git:git /home/git/.ssh/authorized_keys;
+    chmod 600 /home/git/.ssh/authorized_keys;
+)
+
+s6-setuidgid git mkdir -p /home/git/repositories;
+
+chown -R git:users \
+    /scripts/
+

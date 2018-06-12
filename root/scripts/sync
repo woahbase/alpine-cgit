@@ -1,0 +1,58 @@
+#!/bin/bash
+
+REPODIR="/home/git/repositories";
+RUNFILE="/tmp/gitsynclonesrun";
+
+if [ -e $RUNFILE ];
+then
+    echo "[$(date)] Still running previous instance.";
+    exit 1;
+else
+#     # sync clones
+#     find "$REPODIR" -maxdepth 3 2> /dev/null | grep -e '\/\.git$' | sort > /tmp/gitlist;
+#     while read line;
+#     do
+#         cd $(readlink -f ${line%\.git}) ;
+#         echo "===";
+#         echo "[$(date)] Location: $PWD";
+#         echo "Remotes:";
+#         git remote -v | grep -e '(pull)';
+#         git pull --all --force --tags --recurse-submodules --update-shallow --progress --allow-unrelated-histories;
+#         # git fetch --all --force --tags --recurse-submodules=yes --update-shallow --progress -k --jobs 3;
+#         echo "[$(date)] Done";
+#         echo "===";
+#     done < /tmp/gitlist;
+#     rm -f /tmp/gitlist;
+
+    # sync mirrors
+    find "$REPODIR" -maxdepth 3 -type d 2> /dev/null |\
+	grep -e '\.git\/' |\
+	sed 's_\/[^\/]*$__' |\
+	uniq | sort > /tmp/gitlist;
+
+    echo "$(date)" > $RUNFILE;
+
+    while read line;
+    do
+        cd $(readlink -f $line) ;
+        echo "===";
+
+        # echo "[$(date)] Repo Location: ${PWD##*/}";
+        echo "[$(date)] Repo Location: ${PWD##$REPODIR/}";
+
+        remotes="$(git remote -v | grep -e '(push)')"; # fetch/push for mirrors, pull/push for normal repos
+	if [ -z "$remotes" ];
+	then
+		echo "[$(date)] No remote found";
+	else
+		echo "[$(date)] Remote URL: $remotes";
+		git fetch --all --force --tags --recurse-submodules=yes --update-shallow --progress -k --jobs 2;
+	fi;
+
+        echo "[$(date)] Done";
+        echo "===";
+    done < /tmp/gitlist;
+
+    rm -f $RUNFILE;
+    rm -f /tmp/gitlist;
+fi;

@@ -1,0 +1,37 @@
+#!/bin/bash
+
+REPODIR="/home/git/repositories";
+
+select opt in $(ls $REPODIR);
+do
+	if [ "$opt" != "" ]; then
+                cDir="$opt";
+		break;
+	fi;
+	#else
+	echo "Invalid option."
+done;
+
+if [ ! -d "$REPODIR/$cDir" ];
+then
+	echo "Does not exist: $REPODIR/$cDir";
+	exit 1;
+fi;
+
+read -p "URL:" cUrl;
+read -p "Description:" rDesc;
+
+oDir="$PWD";
+cd "$REPODIR/$cDir";
+
+# git clone --shared --recursive --progress "$cUrl";
+git clone --mirror --shared --progress "$cUrl";
+
+rName=${cUrl##*/};
+rName=${rName%\.git};
+
+# [[ -f "./$rName/.git/description" ]] && echo "$rDesc" > "./$rName/.git/description" || echo "No file: ./$rName/.git/description";
+[[ -f "./$rName.git/description" ]] && echo "$rDesc" > "./$rName.git/description" || echo "No file: ./$rName.git/description";
+
+cd "$oDir";
+echo "Done";

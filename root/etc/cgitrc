@@ -1,0 +1,140 @@
+#
+## cgit config
+#
+#
+# Enable caching of up to 1000 output entries
+# cache-size=5
+
+## ttl for root page
+cache-root-ttl=5
+
+## ttl for repo summary page
+cache-repo-ttl=5
+
+## ttl for other dynamic pages
+cache-dynamic-ttl=5
+
+## ttl for static pages (addressed by SHA-1)
+cache-static-ttl=-1
+
+# css
+css=/cgit/cgit.css
+logo=/cgit/cgit.png
+
+# Enable ASCII art commit history graph on the log pages
+enable-commit-graph=1
+
+enable-follow-links=1
+enable-subject-links=1
+enable-index-links=1
+
+enable-git-config=1
+enable-html-serving=1
+
+enable-http-clone=1
+enable-git-clone=1
+
+enable-index-owner=0
+enable-gitweb-owner=1
+
+enable-log-filecount=1
+enable-log-linecount=1
+
+enable-remote-branches=1
+enable-tree-linenumbers=1
+
+# summary info
+summary-branches=10
+summary-log=10
+summary-tags=10
+
+# Sort  by age/name
+repository-sort=name
+branch-sort=age
+commit-sort=age
+
+# Enable statistics per week, month and quarter
+max-stats=year
+
+# show local time not utc
+local-time=1
+
+root-title=cGit
+root-desc=Keep ALL the stuff in VERSION CONTROL!!
+root-readme=/var/www/about.html
+# footer=/var/www/footer.html
+
+# if you do not want that webcrawler (like google) index your site
+robots=noindex, nofollow
+
+# if cgit messes up links, use a virtual-root. For example has cgit.example.org/ this value:
+virtual-root=/git/
+
+side-by-side-diffs=0
+
+# needs python-pygments
+# source-filter=/usr/lib/cgit/filters/syntax-highlighting.py
+
+# Format markdown, restructuredtext, manpages, text files, and html files through the right converters
+# about-filter=/usr/lib/cgit/filters/about-formatting.sh
+
+# available snaps
+snapshots=tar.gz zip
+
+# Specify some default clone urls using macro expansion
+clone-url=ssh://git@hostname.local:64822~repositories/$CGIT_REPO_URL git@hostname.local:/home/git/repositories/$CGIT_REPO_URL
+
+##
+## List of common mimetypes
+##
+
+mimetype.gif=image/gif
+mimetype.html=text/html
+mimetype.jpg=image/jpeg
+mimetype.jpeg=image/jpeg
+mimetype.pdf=application/pdf
+mimetype.png=image/png
+mimetype.svg=image/svg+xml
+
+##
+### Search for these files in the root of the default branch of repositories
+### for coming up with the about page:
+###
+readme=:README.md
+readme=:readme.md
+readme=:README.mkd
+readme=:readme.mkd
+readme=:README.rst
+readme=:readme.rst
+readme=:README.html
+readme=:readme.html
+readme=:README.htm
+readme=:readme.htm
+readme=:README.txt
+readme=:readme.txt
+readme=:README
+readme=:readme
+readme=:INSTALL.md
+readme=:install.md
+readme=:INSTALL.mkd
+readme=:install.mkd
+readme=:INSTALL.rst
+readme=:install.rst
+readme=:INSTALL.html
+readme=:install.html
+readme=:INSTALL.htm
+readme=:install.htm
+readme=:INSTALL.txt
+readme=:install.txt
+readme=:INSTALL
+readme=:install
+
+# sections
+section-from-path=1
+section-sort=1
+
+# repos
+max-repo-count=99999
+remove-suffix=1
+scan-hidden-path=1
+scan-path=/home/git/repositories/

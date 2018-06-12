@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bash
+
+lighttpd -D -f /etc/lighttpd/lighttpd.conf

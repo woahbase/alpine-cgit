@@ -1,0 +1,29 @@
+#!/bin/sh
+#this script reside in git_projectname/hooks directory
+#and creates checkouts from git projects to $projects_dir/reponame
+# to be displayed in web interfaceat the time the project is pushed.
+
+#currently support only master branch
+
+#set projects dir - absolute paths only
+projects_dir="/home/git/projects";
+
+#get reponame
+if [ $(git rev-parse --is-bare-repository) = true ]
+then repo_basename=$(basename "$PWD") ;
+else repo_basename=$(basename $(readlink -nf "$PWD"/..));
+fi;
+
+#remove .git
+#repo_basename=$(basename "$PWD");
+repo_basenogit="${repo_basename%.git}";
+
+#setup deploydir - create if does not exist
+deploydir="$projects_dir/$repo_basenogit/";
+if [ ! -d "$deploydir" ]; then mkdir -p "$deploydir"; fi;
+
+#checkout in deploydir
+GIT_WORK_TREE=$deploydir git checkout -f;
+# update submodules
+#GIT_WORK_TREE=$deploydir git submodule init;
+#GIT_WORK_TREE=$deploydir git submodule update;

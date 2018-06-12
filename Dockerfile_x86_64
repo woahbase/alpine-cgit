@@ -1,0 +1,26 @@
+ARG ARCH=frommakefile
+ARG DOCKERSRC=frommakefile
+ARG USERNAME=frommakefile
+#
+FROM ${USERNAME}/${DOCKERSRC}:${ARCH}
+#
+ARG PUID=1000
+ARG PGID=1000
+#
+RUN set -xe \
+    && apk add --no-cache --purge -uU \
+	    ca-certificates curl cgit lighttpd openssh-server git \
+    && echo 'include "cgit.conf"' >> /etc/lighttpd/lighttpd.conf \
+#    && addgroup -g ${PGID} -S git \
+#    && adduser -u ${PUID} -G git -h /home/git -D git -s /usr/bin/git-shell git users  \
+    && adduser -u ${PUID} -h /home/git -D -s /usr/bin/git-shell git users  \
+    && passwd -d -u git \
+    && rm -rf /var/cache/apk/* /tmp/*
+#
+COPY root/ /
+#
+VOLUME /var/www/ /home/git/
+#
+EXPOSE 80 22
+#
+ENTRYPOINT ["/init"]
