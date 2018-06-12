@@ -82,7 +82,7 @@ architecture, e.g for an x86_64 machine..
 This images already has a user `git` configured to drop
 privileges to the passed `PUID`/`PGID` which is ideal if its used
 to run in non-root mode. That way you only need to specify the
-values at runtime and pass the `-u alpine` if need be. (run `id`
+values at runtime and pass the `-u git` if need be. (run `id`
 in your terminal to see your own `PUID`/`PGID` values.)
 
 Running `make` starts the service.
@@ -102,19 +102,19 @@ docker run --rm -it \
   woahbase/alpine-cgit:x86_64
 ```
 
-create a bare repository with,
+Create a bare repository with,
 
 ```
 docker exec -u git -it docker_cgit /scripts/bareinit
 ```
 
-mirror an existing repository with,
+Mirror an existing repository with,
 
 ```
 docker exec -u git -it docker_cgit /scripts/mirror
 ```
 
-sync the repositories already tracking with their remote,
+Sync the repositories already tracking with their remote,
 
 ```
 docker exec -u git -it docker_cgit /scripts/sync
