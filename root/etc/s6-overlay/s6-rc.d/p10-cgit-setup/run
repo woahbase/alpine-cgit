@@ -1,0 +1,27 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+if [ ! -f /etc/cgitrc ];
+then
+    cp /defaults/cgitrc /etc/cgitrc;
+fi;
+
+if [ ! -f /etc/lighttpd/cgit.conf ];
+then
+    mkdir -p /etc/lighttpd;
+    cp /defaults/cgit.lighttpd.conf /etc/lighttpd/cgit.conf;
+fi;
+
+S6_USER="${S6_USER:-git}"; # set in Dockerfile
+S6_USERHOME="${S6_USERHOME:-/home/$S6_USER}";
+
+mkdir -p \
+    $S6_USERHOME/repositories;
+
+chown $S6_USER:$S6_USER \
+    $S6_USERHOME \
+    $S6_USERHOME/repositories \
+    # if not existing, docker mounts this dir as root:root
+
+chown -R $S6_USER:users \
+    /scripts/

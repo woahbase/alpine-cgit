@@ -140,5 +140,5 @@ Protocol 2
 PubkeyAuthentication yes
 StrictModes yes
 # Subsystem       sftp    /usr/lib/ssh/sftp-server
-UsePAM no
+# UsePAM no
 X11Forwarding no

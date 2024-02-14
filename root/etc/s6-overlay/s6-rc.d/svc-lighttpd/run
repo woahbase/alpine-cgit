@@ -1,0 +1,9 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+LIGHTTPD_ARGS="${LIGHTTPD_ARGS:- -D}";
+
+exec \
+    lighttpd \
+    ${LIGHTTPD_ARGS} \
+    -f /etc/lighttpd/lighttpd.conf

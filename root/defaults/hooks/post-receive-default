@@ -6,7 +6,7 @@
 #currently support only master branch
 
 #set projects dir - absolute paths only
-projects_dir="/home/git/projects";
+projects_dir="/home/git/repositories";
 
 #get reponame
 if [ $(git rev-parse --is-bare-repository) = true ]

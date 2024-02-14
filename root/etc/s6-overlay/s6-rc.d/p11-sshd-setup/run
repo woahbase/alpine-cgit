@@ -1,0 +1,36 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+mkdir -p /etc/ssh;
+if [ ! -f /etc/ssh/sshd_config ];
+then
+    cp /defaults/sshd_config /etc/ssh/sshd_config;
+fi;
+
+# ensure ssh host keys exist
+if [ ! -f /etc/ssh/ssh_host_rsa_key ];
+then
+    echo "Generating host keys.";
+    ssh-keygen -t rsa -b 1024 -N "" -f /etc/ssh/ssh_host_rsa_key;
+    ssh-keygen -t dsa -b 1024 -N "" -f /etc/ssh/ssh_host_dsa_key;
+    ssh-keygen -t ecdsa -b 521 -N "" -f /etc/ssh/ssh_host_ecdsa_key;
+    ssh-keygen -t ed25519 -b 512 -N "" -f /etc/ssh/ssh_host_ed25519_key;
+fi;
+
+S6_USER="${S6_USER:-git}"; # set in Dockerfile
+S6_USERHOME="${S6_USERHOME:-/home/$S6_USER}";
+
+if [ ! -f $S6_USERHOME/.ssh/id_rsa ];
+then
+    echo "Generating user SSH keys for $S6_USER.";
+    s6-setuidgid $S6_USER mkdir -p $S6_USERHOME/.ssh;
+    s6-setuidgid $S6_USER ssh-keygen -t rsa -b 1024 -N "" -C "${S6_USER}@${HOSTNAME}" -f $S6_USERHOME/.ssh/id_rsa;
+fi;
+
+if [ ! -f $S6_USERHOME/.ssh/authorized_keys ] && [ -f $S6_USERHOME/.ssh/id_rsa.pub ];
+then
+    echo "Setting up authorized_keys for $S6_USER";
+    s6-setuidgid $S6_USER cat $S6_USERHOME/.ssh/id_rsa.pub >> $S6_USERHOME/.ssh/authorized_keys;
+    chown $S6_USER:$S6_USER $S6_USERHOME/.ssh/authorized_keys;
+    chmod 600 $S6_USERHOME/.ssh/authorized_keys;
+fi;

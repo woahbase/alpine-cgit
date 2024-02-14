@@ -1,0 +1,9 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+SSHD_ARGS="${SSHD_ARGS:- -De}";
+
+exec \
+    /usr/sbin/sshd \
+    ${SSHD_ARGS} \
+    -f /etc/ssh/sshd_config

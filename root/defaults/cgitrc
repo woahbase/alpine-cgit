@@ -1,5 +1,6 @@
 #
 ## cgit config
+# reference: https://linux.die.net/man/5/cgitrc
 #
 #
 # Enable caching of up to 1000 output entries
@@ -73,10 +74,10 @@ virtual-root=/git/
 side-by-side-diffs=0
 
 # needs python-pygments
-# source-filter=/usr/lib/cgit/filters/syntax-highlighting.py
+source-filter=/usr/lib/cgit/filters/syntax-highlighting.py
 
 # Format markdown, restructuredtext, manpages, text files, and html files through the right converters
-# about-filter=/usr/lib/cgit/filters/about-formatting.sh
+about-filter=/usr/lib/cgit/filters/about-formatting.sh
 
 # available snaps
 snapshots=tar.gz zip
