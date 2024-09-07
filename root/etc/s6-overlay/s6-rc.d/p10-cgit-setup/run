@@ -1,27 +1,76 @@
 #!/usr/bin/with-contenv bash
 set -e
 
-if [ ! -f /etc/cgitrc ];
-then
-    cp /defaults/cgitrc /etc/cgitrc;
-fi;
-
-if [ ! -f /etc/lighttpd/cgit.conf ];
-then
-    mkdir -p /etc/lighttpd;
-    cp /defaults/cgit.lighttpd.conf /etc/lighttpd/cgit.conf;
-fi;
+vecho () { if [ "${S6_VERBOSITY:-1}" -gt 0 ]; then echo "[$0] $@"; fi; }
 
 S6_USER="${S6_USER:-git}"; # set in Dockerfile
 S6_USERHOME="${S6_USERHOME:-/home/$S6_USER}";
 
+CGIT_HOSTNAME="${CGIT_HOSTNAME:-localhost}";
+CGIT_REPODIR="${CGIT_REPODIR:-$S6_USERHOME/repositories}"; # set in Dockerfile
+CGIT_SUBPATH="${CGIT_SUBPATH:-/git}";
+
+LIGHTTPD_CONFDIR="${LIGHTTPD_CONFDIR:-/etc/lighttpd}";
+LIGHTTPD_LOGFILE="${LIGHTTPD_LOGFILE:-/var/log/lighttpd/lighttpd.log}";
+LIGHTTPD_USER="${LIGHTTPD_USER:-lighttpd}";
+
+vecho "Ensure configuration directories exist.";
 mkdir -p \
-    $S6_USERHOME/repositories;
+    ${CGIT_REPODIR} \
+    ${LIGHTTPD_CONFDIR} \
+    $(dirname ${LIGHTTPD_LOGFILE}) \
+    ;
 
-chown $S6_USER:$S6_USER \
+# function to substitute paths in config files
+_subst () {
+    sed \
+    -e "s|CGIT_USER|$S6_USER|g" \
+    -e "s|CGIT_HOSTNAME|$CGIT_HOSTNAME|g" \
+    -e "s|CGIT_REPODIR|$CGIT_REPODIR|g" \
+    -e "s|CGIT_SUBPATH|$CGIT_SUBPATH|g" \
+    -e "s|LIGHTTPD_USER|$LIGHTTPD_USER|g" \
+    -e "s|LIGHTTPD_LOGFILE|$LIGHTTPD_LOGFILE|g" \
+    $1 > $2;
+}
+
+# make sure cgitrc exists
+if [ ! -f /etc/cgitrc ];
+then
+    vecho "Setting up CGit configurations at /etc/cgitrc.";
+    _subst /defaults/cgitrc /etc/cgitrc;
+fi;
+
+# make sure lighttpd conf exists
+if [ ! -f ${LIGHTTPD_CONFDIR}/lighttpd.conf ];
+then
+    vecho "Setting up default Lighttpd configurations at ${LIGHTTPD_CONFDIR}/lighttpd.conf.";
+    _subst /defaults/lighttpd.conf ${LIGHTTPD_CONFDIR}/lighttpd.conf;
+fi;
+
+if [ ! -f ${LIGHTTPD_CONFDIR}/cgit.conf ];
+then
+    vecho "Setting up Lighttpd configurations for CGit at ${LIGHTTPD_CONFDIR}/cgit.conf.";
+    _subst /defaults/cgit.lighttpd.conf ${LIGHTTPD_CONFDIR}/cgit.conf;
+fi;
+
+# fix permissions
+vecho "Fixing permissions.";
+chown ${S6_USER:-git}:${S6_USER:-git} \
     $S6_USERHOME \
-    $S6_USERHOME/repositories \
-    # if not existing, docker mounts this dir as root:root
+    $CGIT_REPODIR \
+    ; # if not existing, docker mounts this dir as root:root
 
-chown -R $S6_USER:users \
-    /scripts/
+# ensure we can run scripts
+chown -R ${S6_USER:-git}:${S6_USER:-git} /scripts/;
+chmod +x /scripts/*;
+
+# fix repo permissions
+if [ -n "${CGIT_PERMFIX_REPOS}" ]; # may become cumbersome if REPODIR has large number of repositories
+then
+    vecho "Fixing permissions on $CGIT_REPODIR repositories.";
+    find "${CGIT_REPODIR}" \
+        \! -user ${S6_USER:-git} -exec \
+        chown --no-dereference \
+        ${S6_USER:-git}:${S6_USER:-git} \
+        '{}' +;
+fi;

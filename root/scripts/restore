@@ -1,0 +1,59 @@
+#!/bin/bash
+
+usageStr="Usage: (ba)sh $0 <filters: directories, or reponames>";
+
+repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
+archiveDir="${CGIT_ARCHIVEDIR:-$CGIT_REPODIR/.archived}"; # archive dir (must exist)
+
+oDir="$PWD"; # so we can get back to working dir after task done
+
+filter="$1"; # filter repos in directories, or by name
+tracker="/tmp/restored"; # keep track of restored repos
+
+mkdir -p $repoDir; # ensure dir exists
+cd $archiveDir; # set $PWD
+
+# gather repos in $tracker
+# find
+#   ignore backup files
+#   ignore dirs not ending with .git
+#   filter with $filter
+#   remove path upto repodir
+#   sort / uniq
+find . -maxdepth 3 -type f 2> /dev/null \
+    | grep -e '\.git.tar.gz' \
+    | grep -e "${filter:=./}" \
+    | sed -e 's_^\./__' \
+    | sort -u \
+    > "${tracker}";
+
+# restore each archived repo in respective folder inside $CGIT_REPODIR
+for line in `cat ${tracker}`;
+do
+    bfile="$line"; # restore source tar file
+    sdir="$repoDir/${line%/*}"; # restore dest dir
+    repo="$repoDir/${line%.tar.gz}"; # repo dir
+    bdir="${line%/*}"; # check if repo parent dir exists
+    # echo -e "line: $line \n sdir: $sdir \n repo: $repo \n bdir: $bdir";
+
+    if [ ! -f "${bfile}" ]; # no backup file exists
+    then
+        echo "No backups exist: ${bfile}";
+    elif [ -d "${repo}" ]; # repository exists
+    then
+        echo "Already exists: $line => ${repo}";
+    else
+        if [ ! -d "${sdir}" ]; # repo parent dir does not exist
+        then
+            echo "Creating category dir: $sdir";
+            mkdir -p "${sdir}";
+        fi;
+
+        echo "Restoring: $line => ${repo}";
+        tar -xvzf "${bfile}" -C "${sdir}";
+    fi;
+    echo; # spacer
+done;
+
+cd "$oDir"; # get back to working dir
+echo "Done";

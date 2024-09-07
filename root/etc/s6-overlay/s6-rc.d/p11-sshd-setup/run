@@ -1,35 +1,57 @@
 #!/usr/bin/with-contenv bash
 set -e
 
-mkdir -p /etc/ssh;
-if [ ! -f /etc/ssh/sshd_config ];
-then
-    cp /defaults/sshd_config /etc/ssh/sshd_config;
-fi;
-
-# ensure ssh host keys exist
-if [ ! -f /etc/ssh/ssh_host_rsa_key ];
-then
-    echo "Generating host keys.";
-    ssh-keygen -t rsa -b 1024 -N "" -f /etc/ssh/ssh_host_rsa_key;
-    ssh-keygen -t dsa -b 1024 -N "" -f /etc/ssh/ssh_host_dsa_key;
-    ssh-keygen -t ecdsa -b 521 -N "" -f /etc/ssh/ssh_host_ecdsa_key;
-    ssh-keygen -t ed25519 -b 512 -N "" -f /etc/ssh/ssh_host_ed25519_key;
-fi;
+vecho () { if [ "${S6_VERBOSITY:-1}" -gt 0 ]; then echo "[$0] $@"; fi; }
 
 S6_USER="${S6_USER:-git}"; # set in Dockerfile
 S6_USERHOME="${S6_USERHOME:-/home/$S6_USER}";
 
-if [ ! -f $S6_USERHOME/.ssh/id_rsa ];
+SSHD_CONFDIR="${SSHD_CONFDIR:-/etc/ssh}";
+mkdir -p ${SSHD_CONFDIR};
+
+if [ ! -f "${SSHD_CONFDIR}/sshd_config" ];
 then
-    echo "Generating user SSH keys for $S6_USER.";
-    s6-setuidgid $S6_USER mkdir -p $S6_USERHOME/.ssh;
-    s6-setuidgid $S6_USER ssh-keygen -t rsa -b 1024 -N "" -C "${S6_USER}@${HOSTNAME}" -f $S6_USERHOME/.ssh/id_rsa;
+    vecho "Ensure default SSHd configuration exists.";
+    cp /defaults/sshd_config ${SSHD_CONFDIR}/;
+fi;
+
+# generate host keys, bind mount ${SSHD_CONFDIR} to somewhere local if you need to preserve them
+if [ ! -f "${SSHD_CONFDIR}/ssh_host_rsa_key"  ];
+then
+    vecho "Generating SSHd host keys.";
+    ssh-keygen -t rsa     -b 1024 -N "" -f ${SSHD_CONFDIR}/ssh_host_rsa_key;
+    ssh-keygen -t dsa     -b 1024 -N "" -f ${SSHD_CONFDIR}/ssh_host_dsa_key;
+    ssh-keygen -t ecdsa   -b 521  -N "" -f ${SSHD_CONFDIR}/ssh_host_ecdsa_key;
+    ssh-keygen -t ed25519 -b 512  -N "" -f ${SSHD_CONFDIR}/ssh_host_ed25519_key;
+fi;
+
+# set sshd configuration from environment vars i.e. /run/s6/container_environment/SSHD__<varname>
+if find /run/s6/container_environment/SSHD__* -maxdepth 1 > /dev/null 2>&1; then
+    for FILENAME in /run/s6/container_environment/*;
+    do
+        if [[ "${FILENAME##*/}" == "SSHD__"* ]];
+        then
+            BASENAME="${FILENAME##*/}";
+            VAR=${BASENAME//SSHD__/};
+            VAL="$(cat ${FILENAME})";
+            sed -i -e "s|^#\?${VAR} \?.*\$|$VAR $VAL|" ${SSHD_CONFDIR}/sshd_config;
+            vecho "Set ${VAR} from ${BASENAME} in ${SSHD_CONFDIR}/sshd_config";
+        fi;
+    done;
+fi;
+
+if [ ! -f ${S6_USERHOME}/.ssh/id_rsa ];
+then
+    vecho "Generating user SSH keys for $S6_USER.";
+    s6-setuidgid ${S6_USER} mkdir -p ${S6_USERHOME}/.ssh;
+    s6-setuidgid ${S6_USER} chmod 700 ${S6_USERHOME}/.ssh;
+    s6-setuidgid ${S6_USER} ssh-keygen -t rsa -b 1024 -N "" -C "${S6_USER}@${HOSTNAME}" -f ${S6_USERHOME}/.ssh/id_rsa;
+    s6-setuidgid ${S6_USER} chmod 600 ${S6_USERHOME}/.ssh/id_rsa;
 fi;
 
 if [ ! -f $S6_USERHOME/.ssh/authorized_keys ] && [ -f $S6_USERHOME/.ssh/id_rsa.pub ];
 then
-    echo "Setting up authorized_keys for $S6_USER";
+    vecho "Setting up authorized_keys for $S6_USER";
     s6-setuidgid $S6_USER cat $S6_USERHOME/.ssh/id_rsa.pub >> $S6_USERHOME/.ssh/authorized_keys;
     chown $S6_USER:$S6_USER $S6_USERHOME/.ssh/authorized_keys;
     chmod 600 $S6_USERHOME/.ssh/authorized_keys;

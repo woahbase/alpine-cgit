@@ -1,9 +1,11 @@
 #!/usr/bin/with-contenv bash
 set -e
 
+SSHD_CONFDIR="${SSHD_CONFDIR:-/etc/ssh}";
 SSHD_ARGS="${SSHD_ARGS:- -De}";
 
 exec \
     /usr/sbin/sshd \
+    -f ${SSHD_CONFDIR}/sshd_config \
     ${SSHD_ARGS} \
-    -f /etc/ssh/sshd_config
+    ;

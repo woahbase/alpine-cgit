@@ -1,68 +1,97 @@
 #!/bin/bash
 
-REPODIR="/home/git/repositories/_bare"
+usageStr="Usage: (ba)sh $0 \$reponame(no .git) \$description...";
 
-#get dotfiles dir path from running file
-filepath=`readlink -f $0`;
-rootdir=${filepath%/*};
+repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
+hooksDir="${CGIT_HOOKSDIR:-/defaults/hooks}"; # copy custom hooks from this dir
 
-# if [ -z "$1" ];
-# then
-# 	echo "Usage: sh $0 \$reponame(no .git) \$description";
-# 	exit 1;
-# fi;
+oDir="$PWD"; # so we can get back to working dir after task done
+cd "$repoDir";
 
-rpn="$1";
-shift;
+rpn="$1"; shift;
 repodesc="$@";
+
+# there can be either be multiple directory (as in categories) in repodir e.g
+#	_bare/	(for private projects)
+#	bitbucket/
+#	codeberg/
+#	github/
+#	gitlab/
+#	etc
+# or
+#  repos put directly inside repoDir
+
+# check if any category dirs exist,
+# i.e. no directory ending with .git in repoDir
+if [ "$(find $repoDir -maxdepth 1 -type d | grep -qe '\.git$' && echo 1)" != "1" ];
+then
+	# select which dir to put the mirror repository in
+	select opt in $(ls -A --group-directories-first $repoDir);
+	do
+		if [ "$opt" != "" ];
+		then
+			cDir="$opt";
+			break;
+		fi;
+		echo "Invalid option."
+	done;
+
+	if [ ! -d "$repoDir/$cDir" ];
+	then
+		echo "Does not exist: $repoDir/$cDir";
+		exit 1;
+	fi;
+	cd "$repoDir/$cDir"; # repo will be cloned inside category dir
+    bareDir="$repoDir/$cDir"; # directory for bare repositories, so they don't mix with mirrored repos
+else
+    bareDir="$repoDir"; # all types of repos in repoDir
+fi;
 
 if [ -z "$rpn" ];
 then
 	read -p "Name(required, no .git): " rpn;
 	if [ -z "$rpn" ];
 	then
-	 	echo "Usage: sh $0 \$reponame(no .git) \$description";
+		echo "$usageStr";
 		exit 1;
 	else
 		:
 	fi;
 fi;
 
-reponame="$rpn.git";
+reponame="$rpn.git"; # add .git to name
 
-if [ -d "$REPODIR/$reponame" ];
+if [ -d "$bareDir/$reponame" ];
 then
 	echo "Repository exists.";
+	exit 1;
 else
-	echo "Initializing git at: $REPODIR/$reponame";
-	mkdir -p "$REPODIR/$reponame";
-	cd "$REPODIR/$reponame";
-	#init bare git
-	git init --bare --shared;
-fi;
+	echo "Initializing bare repository at: $bareDir/$reponame";
+	mkdir -p "$bareDir/$reponame";
+	cd "$bareDir/$reponame";
+	git init --bare --shared; #initialize bare git repository
 
-
-# write description
-if [ -z "$repodesc" ];
-then
-	read -p "Description(optional):" repodesc;
-	if [ -z "$repodesc" ];
+	if [ -z "$repodesc" ];    # write description
 	then
-		:
+		read -p "Description(optional):" repodesc;
+		if [ -z "$repodesc" ];
+		then
+			:
+		else
+			echo "Writing description";
+			echo "$repodesc" > "$bareDir/$reponame/description";
+		fi;
 	else
 		echo "Writing description";
-	        echo "$repodesc" > "$REPODIR/$reponame/description";
+		echo "$repodesc" > "$bareDir/$reponame/description";
 	fi;
-else
-	echo "Writing description";
-        echo "$repodesc" > "$REPODIR/$reponame/description";
+
+	mkdir -p "$bareDir/$reponame/hooks";
+	# echo "Copying post receive hook..."; # creates checkouts in $CGIT_PROJECTDIR
+	# cp "$hooksDir/post-receive-default" "$bareDir/$reponame/hooks/post-receive";
+	echo "Copying post update hook..."; # updates git-server-info
+	cp "$hooksDir/post-update-default" "$bareDir/$reponame/hooks/post-update";
 fi;
 
-#copy post receive hook from rootdir;
-# echo "Copying post receive hook...";
-# cp "/defaults/hooks/post-receive-default" "$REPODIR/$reponame/hooks/post-receive";
-
-echo "Copying post update hook...";
-cp "/defaults/hooks/post-update-default" "$REPODIR/$reponame/hooks/post-update";
-
-#return 0;
+cd "$oDir"; # get back to working dir
+echo "Done";

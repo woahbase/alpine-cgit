@@ -14,14 +14,21 @@ RUN set -xe \
         py3-docutils \
         py3-markdown \
         py3-pygments \
-    && echo 'include "cgit.conf"' >> /etc/lighttpd/lighttpd.conf \
     && adduser -h /home/git -D -s /usr/bin/git-shell git users  \
     && passwd -d -u git \
+    # ensure lighttpd reads cgit.conf
+    && echo 'include "cgit.conf"' >> /etc/lighttpd/lighttpd.conf \
     # cgit expects rst2html as rst2html.py
-    && ln -sf $(which rst2html) /usr/local/bin/rst2html.py \
+    && if [ ! -e "/usr/local/bin/rst2html.py" ]; then ln -sf $(which rst2html) /usr/local/bin/rst2html.py; fi \
+    # move files to defaults/
+    && mkdir -p /defaults \
+    && mv /etc/ssh/sshd_config /defaults/sshd_config.default \
+    && mv /etc/lighttpd/lighttpd.conf /defaults/lighttpd.conf.default \
     && rm -rf /var/cache/apk/* /tmp/*
 #
-ENV S6_USER=git
+ENV \
+    S6_USER=git \
+    CGIT_REPODIR=/home/git/repositories
 #
 COPY root/ /
 #

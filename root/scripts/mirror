@@ -1,37 +1,62 @@
 #!/bin/bash
 
-REPODIR="/home/git/repositories";
+usageStr="Usage: (ba)sh $0";
 
-select opt in $(ls $REPODIR);
-do
-	if [ "$opt" != "" ]; then
-                cDir="$opt";
-		break;
-	fi;
-	#else
-	echo "Invalid option."
-done;
+repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
 
-if [ ! -d "$REPODIR/$cDir" ];
+oDir="$PWD"; # so we can get back to working dir after task done
+cd "$repoDir";
+
+# there can be either be multiple directory (as in categories) in repodir e.g
+#	_bare/	(for private projects)
+#	bitbucket/
+#	codeberg/
+#	github/
+#	gitlab/
+#	etc
+# or
+#  repos put directly inside repoDir
+
+# check if any category dirs exist,
+# i.e. no directory ending with .git in repoDir
+if [ "$(find $repoDir -maxdepth 1 -type d | grep -qe '\.git$' && echo 1)" != "1" ];
 then
-	echo "Does not exist: $REPODIR/$cDir";
-	exit 1;
+	# select which dir to put the mirror repository in
+	select opt in $(ls -A --group-directories-first $repoDir);
+	do
+		if [ "$opt" != "" ];
+		then
+			cDir="$opt";
+			break;
+		fi;
+		echo "Invalid option."
+	done;
+
+	if [ ! -d "$repoDir/$cDir" ];
+	then
+		echo "Does not exist: $repoDir/$cDir";
+		exit 1;
+	fi;
+	cd "$repoDir/$cDir"; # repo will be cloned inside category dir
 fi;
 
-read -p "URL:" cUrl;
-read -p "Description:" rDesc;
-
-oDir="$PWD";
-cd "$REPODIR/$cDir";
+read -p "URL:" cUrl; # clone url
+read -p "Description:" rDesc; # repo description
 
 # git clone --shared --recursive --progress "$cUrl";
-git clone --mirror --shared --progress "$cUrl";
+git clone \
+	--mirror \
+	--progress \
+	--shared \
+	"$cUrl" \
+;
 
-rName=${cUrl##*/};
-rName=${rName%\.git};
+rName=${cUrl##*/}; # extract repo name from url
+rName=${rName%\.git}; # remove .git from name, if exists, we'll add it below
 
-# [[ -f "./$rName/.git/description" ]] && echo "$rDesc" > "./$rName/.git/description" || echo "No file: ./$rName/.git/description";
-[[ -f "./$rName.git/description" ]] && echo "$rDesc" > "./$rName.git/description" || echo "No file: ./$rName.git/description";
+[[ -f "./$rName.git/description" ]] \
+	&& echo "$rDesc" > "./$rName.git/description" \
+	|| echo "No file: ./$rName.git/description";
 
-cd "$oDir";
+cd "$oDir"; # get back to working dir
 echo "Done";

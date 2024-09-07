@@ -1,0 +1,59 @@
+#!/bin/bash
+
+usageStr="Usage: (ba)sh $0 <filters: directories, or reponames>";
+
+repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir (must exist)
+archiveDir="${CGIT_ARCHIVEDIR:-$CGIT_REPODIR/.archived}"; # archive dir
+
+oDir="$PWD"; # so we can get back to working dir after task done
+
+filter="$1"; # filter repos in directories, or by name
+tracker="/tmp/backups"; # keep track of backed up repos
+
+mkdir -p $archiveDir; # ensure dir exists
+cd $repoDir; # set $PWD
+
+# gather repo directories in ${tracker}
+# find
+#   ignore backup files
+#   ignore dirs not ending with .git
+#   filter with $filter
+#   remove path upto repodir
+#   sort / uniq
+find . -maxdepth 3 -type d 2> /dev/null \
+    | grep -v '\.git.tar.gz' \
+    | grep -e '\.git\/' \
+    | grep -e "${filter:=./}" \
+    | sed  -e 's_/[^/]*$__' -e 's_^\./__' \
+    | sort -u \
+    > ${tracker};
+
+# backup each repo in respective category folder inside $archiveDir/
+for line in `cat ${tracker}`;
+do
+    bfile="$archiveDir/$line.tar.gz"; # backup destination tar file
+    sdir="${line%/*}"; # backup source dir
+    repo="${line##*/}"; # repo dir
+
+    bdir="${bfile%/*}"; # backup destination parent dir (ensure exists)
+    if [ ! -d "${bdir}" ]; # if not exists
+    then
+        echo "Creating backup dir: $bdir";
+        mkdir -p "${bdir}";
+    fi;
+
+    if [ -f "${bfile}" ]; # if backup exists
+    then
+        echo "Removing existing backup: $line => $bfile";
+        rm -f "${bfile}";
+        # TODO: rename instead of remove??
+    fi;
+
+    # echo $sdir $repo $bdir;
+    echo "Backing up: $line => $bfile";
+    tar -cvzf "${bfile}" -C "${sdir}" ./${repo};
+    echo; # spacer
+done;
+
+cd "$oDir"; # get back to working dir
+echo "Done";

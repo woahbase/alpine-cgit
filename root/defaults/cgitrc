@@ -69,7 +69,7 @@ root-readme=/var/www/about.html
 robots=noindex, nofollow
 
 # if cgit messes up links, use a virtual-root. For example has cgit.example.org/ this value:
-virtual-root=/git/
+virtual-root=CGIT_SUBPATH/
 
 side-by-side-diffs=0
 
@@ -83,7 +83,7 @@ about-filter=/usr/lib/cgit/filters/about-formatting.sh
 snapshots=tar.gz zip
 
 # Specify some default clone urls using macro expansion
-clone-url=ssh://git@hostname.local:64822~repositories/$CGIT_REPO_URL git@hostname.local:/home/git/repositories/$CGIT_REPO_URL
+clone-url=ssh://CGIT_USER@CGIT_HOSTNAME:64822CGIT_REPODIR/$CGIT_REPO_URL CGIT_USER@CGIT_HOSTNAME:CGIT_REPODIR/$CGIT_REPO_URL
 
 ##
 ## List of common mimetypes
@@ -138,4 +138,4 @@ section-sort=1
 max-repo-count=99999
 remove-suffix=1
 scan-hidden-path=1
-scan-path=/home/git/repositories/
+scan-path=CGIT_REPODIR

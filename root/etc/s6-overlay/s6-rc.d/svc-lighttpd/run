@@ -1,9 +1,11 @@
 #!/usr/bin/with-contenv bash
 set -e
 
+LIGHTTPD_CONFDIR="${LIGHTTPD_CONFDIR:-/etc/lighttpd}";
 LIGHTTPD_ARGS="${LIGHTTPD_ARGS:- -D}";
 
 exec \
     lighttpd \
+    -f ${LIGHTTPD_CONFDIR}/lighttpd.conf \
     ${LIGHTTPD_ARGS} \
-    -f /etc/lighttpd/lighttpd.conf
+    ;

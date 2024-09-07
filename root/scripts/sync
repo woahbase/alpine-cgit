@@ -1,58 +1,94 @@
 #!/bin/bash
 
-REPODIR="/home/git/repositories";
-RUNFILE="/tmp/gitsynclonesrun";
+usageStr="Usage: (ba)sh $0";
 
-if [ -e $RUNFILE ];
+repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
+
+isRunning="${CGIT_SYNC_RUNFILE:-/tmp/sync_is_running}"; # don't run multiple sync jobs
+repoTracker="${CGIT_SYNC_LIST:-/tmp/sync_list_of_repos}"; # list of repos to sync, generated before each run
+ignoreList="${CGIT_SYNC_IGNORELIST:-$repoDir/ignored.txt}"; # list of repos to ignore, format: <category>/<repo>.git
+errorList="${CGIT_SYNC_ERRORLIST:-$repoDir/errors.txt}"; # sync error catcher
+syncJobs="${CGIT_SYNC_JOBS:-1}"; # how many parallel jobs for synchronizing one git repo
+
+if [ -e "$isRunning" ]; # don't run multiple sync jobs
 then
-    echo "[$(date)] Still running previous instance.";
-    exit 1;
-else
-#     # sync clones
-#     find "$REPODIR" -maxdepth 3 2> /dev/null | grep -e '\/\.git$' | sort > /tmp/gitlist;
-#     while read line;
-#     do
-#         cd $(readlink -f ${line%\.git}) ;
-#         echo "===";
-#         echo "[$(date)] Location: $PWD";
-#         echo "Remotes:";
-#         git remote -v | grep -e '(pull)';
-#         git pull --all --force --tags --recurse-submodules --update-shallow --progress --allow-unrelated-histories;
-#         # git fetch --all --force --tags --recurse-submodules=yes --update-shallow --progress -k --jobs 3;
-#         echo "[$(date)] Done";
-#         echo "===";
-#     done < /tmp/gitlist;
-#     rm -f /tmp/gitlist;
+	echo "[$(date)] Still running previous instance. Kill it and remove $isRunning to start sync.";
+	exit 1;
+fi;
 
-    # sync mirrors
-    find "$REPODIR" -maxdepth 3 -type d 2> /dev/null |\
-	grep -e '\.git\/' |\
-	sed 's_\/[^\/]*$__' |\
-	uniq | sort > /tmp/gitlist;
+# start sync
+echo "$(date)" > $isRunning;
+echo "$(date)" > $errorList; # flush old errors from last run
 
-    echo "$(date)" > $RUNFILE;
+oDir="$PWD"; # so we can get back to working dir after task done
 
-    while read line;
-    do
-        cd $(readlink -f $line) ;
-        echo "===";
+# # sync clones
+#	  find "$repoDir" -maxdepth 3 2> /dev/null | grep -e '\/\.git$' | sort > /tmp/gitlist;
+#	  while read line;
+#	  do
+#		  cd $(readlink -f ${line%\.git}) ;
+#		  echo "===";
+#		  echo "[$(date)] Location: $PWD";
+#		  echo "Remotes:";
+#		  git remote -v | grep -e '(pull)';
+#		  git pull --all --force --tags --recurse-submodules --update-shallow --progress --allow-unrelated-histories;
+#		  echo "[$(date)] Done";
+#		  echo "===";
+#	  done < /tmp/gitlist;
+#	  rm -f /tmp/gitlist;
 
-        # echo "[$(date)] Repo Location: ${PWD##*/}";
-        echo "[$(date)] Repo Location: ${PWD##$REPODIR/}";
+# gather repo directories in ${tracker}
+find "$repoDir" -maxdepth 3 -type d 2> /dev/null \
+	| grep -e '\.git\/' \
+	| sed 's_\/[^\/]*$__' \
+	| sort -u \
+	> ${repoTracker};
+	# TODO: limit search e.g. grep -e 'gitorious\/' -e 'tex\/' -e 'work\/' |\
+	#
 
-        remotes="$(git remote -v | grep -e '(push)')"; # fetch/push for mirrors, pull/push for normal repos
+while read line;
+do
+	cd $(readlink -f $line) ;
+	# echo "[$(date)] Repo Location: ${PWD##*/}";
+	echo "[$(date)] Repo Location: ${PWD##$repoDir/}";
+	remotes="$(git remote -v | grep -e '(push)')";
+
 	if [ -z "$remotes" ];
 	then
 		echo "[$(date)] No remote found";
 	else
 		echo "[$(date)] Remote URL: $remotes";
-		git fetch --all --force --tags --recurse-submodules=yes --update-shallow --progress -k --jobs 2;
+
+		if grep -q "^${PWD##$repoDir/}" ${ignoreList};
+		then
+			echo "[$(date)] Repository ignored.";
+		else
+			git fetch \
+				--all \
+				--auto-gc \
+				--auto-maintenance \
+				--force \
+				--jobs $syncJobs \
+				--progress \
+				--recurse-submodules=yes \
+				--tags \
+				--update-shallow \
+				-k \
+			;
+			if [ ! $? -eq 0 ];
+			then
+				echo "[$(date)] Sync failed with error.";
+				echo "[$(date)] Repo Location: ${PWD##$repoDir/}" >> $errorList;
+			else
+				echo "[$(date)] Synced.";
+			fi;
+		fi;
 	fi;
 
-        echo "[$(date)] Done";
-        echo "===";
-    done < /tmp/gitlist;
+	echo "==="; # spacer
+done < $repoTracker;
 
-    rm -f $RUNFILE;
-    rm -f /tmp/gitlist;
-fi;
+rm -f $repoTracker $isRunning; # cleanup
+
+cd "$oDir"; # get back to working dir
+echo "[$(date)] Done";

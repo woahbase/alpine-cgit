@@ -17,7 +17,7 @@ BUILDDATE := $(shell date -u +%Y%m%d)
 HOSTARCH  ?= $(call get_os_platform)
 # target architecture on build and run, defaults to host architecture
 ARCH      ?= $(HOSTARCH)
-IMAGEBASE ?= $(if $(filter scratch,$(SRCIMAGE)),scratch,$(REGISTRY)/$(ORGNAME)/$(OPSYS)-$(SRCIMAGE):$(ARCH))
+IMAGEBASE ?= $(if $(filter scratch,$(SRCIMAGE)),scratch,$(REGISTRY)/$(ORGNAME)/$(OPSYS)-$(SRCIMAGE):$(if $(SRCTAG),$(SRCTAG),$(ARCH)))
 IMAGETAG  ?= $(REGISTRY)/$(ORGNAME)/$(REPONAME):$(ARCH)
 CNTNAME   := docker_$(SVCNAME)
 CNTSHELL  := /bin/bash
@@ -27,7 +27,8 @@ VERSION   ?= $(call get_svc_version)
 TESTCMD   := \
 	uname -a; \
 	git --version; \
-	apk info -qd cgit \
+	apk info -qd cgit; \
+	lighttpd -V; \
 	#
 # -- }}}
 
@@ -41,10 +42,10 @@ LABELFLAGS ?= \
 	--label online.woahbase.branch=$(shell git rev-parse --abbrev-ref HEAD) \
 	--label online.woahbase.build-date=$(BUILDDATE) \
 	--label online.woahbase.build-number=$${BUILDNUMBER:-undefined} \
-	--label online.woahbase.source-image="$(if $(filter scratch,$(SRCIMAGE)),scratch,$(OPSYS)-$(SRCIMAGE):$(ARCH))" \
-	--label org.opencontainers.image.base.name="$(if $(filter scratch,$(SRCIMAGE)),scratch,docker.io/$(ORGNAME)/$(OPSYS)-$(SRCIMAGE):$(ARCH))" \
+	--label online.woahbase.source-image="$(if $(filter scratch,$(SRCIMAGE)),scratch,$(OPSYS)-$(SRCIMAGE):$(if $(SRCTAG),$(SRCTAG),$(ARCH)))" \
+	--label org.opencontainers.image.base.name="$(if $(filter scratch,$(SRCIMAGE)),scratch,docker.io/$(ORGNAME)/$(OPSYS)-$(SRCIMAGE):$(if $(SRCTAG),$(SRCTAG),$(ARCH)))" \
 	--label org.opencontainers.image.created=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ") \
-	--label org.opencontainers.image.documentation="$(if $(DOC_URL),$(DOC_URL),https://woahbase.online/\#/images)/$(REPONAME)" \
+	--label org.opencontainers.image.documentation="$(if $(DOC_URL),$(DOC_URL),https://woahbase.online/images)/$(REPONAME)" \
 	--label org.opencontainers.image.revision=$(shell git rev-parse --short HEAD) \
 	--label org.opencontainers.image.source="$(shell git config --get remote.origin.url)" \
 	--label org.opencontainers.image.title=$(REPONAME) \
@@ -81,10 +82,18 @@ BUILDERFLAGS ?= \
 # runtime flags
 MOUNTFLAGS := \
 	-v $(CURDIR)/data/git:/home/git \
-	-v $(CURDIR)/data/ssh:/etc/ssh \
-	-v $(CURDIR)/data/web:/var/www \
+	# -v $(CURDIR)/data/ssh:/etc/ssh \
+	# -v $(CURDIR)/data/web:/var/www \
+	# -v /etc/hosts:/etc/hosts:ro \
+	# -v /etc/localtime:/etc/localtime:ro \
 	#
-PORTFLAGS  := -p 64801:80 -p 64822:22# --net=host # so other local containers can find it without explicit linking, needs firewall cleared
+PORTFLAGS  := \
+	-p 64801:80 \
+	-p 64822:22 \
+	# # or use host network
+	# --net=host \
+	# # so other local containers can find it without explicit linking,
+	# # needs firewall cleared
 PUID       := $(shell id -u)
 PGID       := $(shell id -g)# gid 100(users) usually pre exists
 OTHERFLAGS := \
@@ -94,10 +103,9 @@ OTHERFLAGS := \
 	-m 256m \
 	-e PGID=$(PGID) \
 	-e PUID=$(PUID) \
+	# -e LIGHTTPD_SKIP_LOGFIFO=true \
 	# --net=host \
 	# -e TZ=Asia/Kolkata \
-	# -v /etc/hosts:/etc/hosts:ro \
-	# -v /etc/localtime:/etc/localtime:ro \
 	#
 # all runtime flags combined here
 RUNFLAGS   := \

@@ -1,0 +1,16 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+LIGHTTPD_LOGFILE="${LIGHTTPD_LOGFILE:-/var/log/lighttpd/lighttpd.log}";
+LIGHTTPD_USER="${LIGHTTPD_USER:-lighttpd}";
+
+rm -f ${LIGHTTPD_LOGFILE}; # if exists
+if [ -z "${LIGHTTPD_SKIP_LOGFIFO}" ]; # set to 'true' to disable
+then
+    mkfifo -m 600 ${LIGHTTPD_LOGFILE};
+    chown ${LIGHTTPD_USER}:${LIGHTTPD_USER} ${LIGHTTPD_LOGFILE};
+    cat <> ${LIGHTTPD_LOGFILE} # to stdout
+    # cat <> ${LIGHTTPD_LOGFILE} 1>&2  # to stderr
+else # let lighttpd log to regular file instead
+    sleep infinity;
+fi;
