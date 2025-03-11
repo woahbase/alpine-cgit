@@ -1,59 +1,95 @@
 #!/bin/bash
+if [ -n "${DEBUG}" ]; then set -ex; fi;
 
-usageStr="Usage: (ba)sh $0 <filters: directories, or reponames>";
+usageStr="Usage: (ba)sh $0 <filters: categories, or reponames>";
 
 repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
 archiveDir="${CGIT_ARCHIVEDIR:-$CGIT_REPODIR/.archived}"; # archive dir (must exist)
-
-oDir="$PWD"; # so we can get back to working dir after task done
+repoTracker="${CGIT_RESTORE_LIST:-/tmp/restore_list_of_repos}"; # list of repos to restore, generated before each run
+maxDepth="${CGIT_REPOS_MAXDEPTH:-3}"; # maximum depth to search for repositories to restore
 
 filter="$1"; # filter repos in directories, or by name
-tracker="/tmp/restored"; # keep track of restored repos
 
-mkdir -p $repoDir; # ensure dir exists
-cd $archiveDir; # set $PWD
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
+iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info
 
-# gather repos in $tracker
-# find
-#   ignore backup files
-#   ignore dirs not ending with .git
-#   filter with $filter
-#   remove path upto repodir
-#   sort / uniq
-find . -maxdepth 3 -type f 2> /dev/null \
-    | grep -e '\.git.tar.gz' \
-    | grep -e "${filter:=./}" \
-    | sed -e 's_^\./__' \
-    | sort -u \
-    > "${tracker}";
+totalRepos=0;   # total repos to restore
+needleRepo=0;   # index of repo currently being processed
+skippedRepos=0; # count of skipped repos
+doneRepos=0;    # count of restored repos
+failedRepos=0;  # count of failed repos
 
-# restore each archived repo in respective folder inside $CGIT_REPODIR
-for line in `cat ${tracker}`;
-do
-    bfile="$line"; # restore source tar file
-    sdir="$repoDir/${line%/*}"; # restore dest dir
-    repo="$repoDir/${line%.tar.gz}"; # repo dir
-    bdir="${line%/*}"; # check if repo parent dir exists
-    # echo -e "line: $line \n sdir: $sdir \n repo: $repo \n bdir: $bdir";
+onExit () {
+    local xc=$?;
+    trap - EXIT;
+    # clean up
+    if [ -f "${repoTracker}" ]; then rm -f "${repoTracker}" && iecho "Removed file: ${repoTracker}"; fi;
+    iecho "$0 exited with code ${xc}";
+}
+trap onExit EXIT HUP INT QUIT PIPE TERM;
 
-    if [ ! -f "${bfile}" ]; # no backup file exists
-    then
-        echo "No backups exist: ${bfile}";
-    elif [ -d "${repo}" ]; # repository exists
-    then
-        echo "Already exists: $line => ${repo}";
-    else
-        if [ ! -d "${sdir}" ]; # repo parent dir does not exist
+runRestore () {
+    mkdir -p "$repoDir" "$archiveDir"; # ensure dirs exist
+
+    # gather archived repos in ${repoTracker}
+    # find
+    #   ignore backup dirs, only need files
+    #   ignore dirs not ending with .git.tar.gz
+    #   filter with $filter (default ./ includes all repos)
+    #   sort / uniq
+    find "${archiveDir}" -maxdepth ${maxDepth} -type f 2> /dev/null \
+        | grep -e '\.git.tar.gz' \
+        | grep -e "${filter:=./}" \
+        | sort -u \
+        > "${repoTracker}";
+    totalRepos="$(cat ${repoTracker} | wc -l)";
+
+    if [[ ${totalRepos} -eq 0 ]]; then eecho "Nothing to restore"; exit 1; fi;
+
+    # restore each archived repo in respective folder inside $CGIT_REPODIR
+    for line in `cat ${repoTracker}`;
+    do
+        local bfile="${line##${archiveDir}/}"; # source git.tar.gz file to restore, $archiveDir removed
+        local repo="${repoDir}/${bfile%.tar.gz}"; # .tar.gz removed, .git untouched, repoDir prepended
+        local cdir="$(dirname ${repo})";      # restore dest dir, may contain category
+
+        ((needleRepo++));
+        iecho "REPO ${needleRepo}/${totalRepos} Fail:${failedRepos} Ok:${doneRepos} Skip:${skippedRepos}";
+        iecho "FROM ${line##${archiveDir}/}";
+        iecho "PATH ${repo##${repoDir}/}";
+
+        if [ ! -f "${line}" ]; # no backup file exists, should never happen unless file vanished somehow
         then
-            echo "Creating category dir: $sdir";
-            mkdir -p "${sdir}";
+            eecho "FAIL backup file not found";
+            ((failedRepos++));
+        elif [ -d "${repo}" ]; # repository exists
+        then
+            eecho "SKIP reason: already exists, won't overwrite";
+            ((skippedRepos++));
+        else
+            if [ ${cdir} != "${repoDir}" ] \
+            && [ ! -d "${cdir}" ]; # repo category dir is set and does not exist in ${repoDir}
+            then
+                iecho "MKDR repo category: ${cdir##${repoDir}/}";
+                mkdir -p "${cdir}";
+            fi;
+
+            tar -xpz \
+                -f "${line}" \
+                -C "${cdir}";
+            if [[ "$?" -eq 0 ]];
+            then
+                ((doneRepos++));
+                iecho "DONE";
+            else
+                ((failedRepos++));
+                iecho "FAIL";
+            fi;
         fi;
+        echo; # spacer
+    done;
+}
 
-        echo "Restoring: $line => ${repo}";
-        tar -xvzf "${bfile}" -C "${sdir}";
-    fi;
-    echo; # spacer
-done;
-
-cd "$oDir"; # get back to working dir
-echo "Done";
+# if not sourcing, run restore
+[[ "$0" == "$BASH_SOURCE" ]] && runRestore $@;

@@ -21,6 +21,7 @@ cache-static-ttl=-1
 # css
 css=/cgit/cgit.css
 logo=/cgit/cgit.png
+#logo=https://git-scm.com/images/logos/downloads/Git-Logo-1788C.png
 
 # Enable ASCII art commit history graph on the log pages
 enable-commit-graph=1
@@ -63,7 +64,7 @@ local-time=1
 root-title=cGit
 root-desc=Keep ALL the stuff in VERSION CONTROL!!
 root-readme=/var/www/about.html
-# footer=/var/www/footer.html
+#footer=/var/www/footer.html
 
 # if you do not want that webcrawler (like google) index your site
 robots=noindex, nofollow

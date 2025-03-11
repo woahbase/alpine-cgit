@@ -1,94 +1,218 @@
 #!/bin/bash
+if [ -n "${DEBUG}" ]; then set -ex; fi;
 
 usageStr="Usage: (ba)sh $0";
 
-repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
+repoDir="${CGIT_REPODIR:-/home/git/repositories}";          # repositories root dir
 
-isRunning="${CGIT_SYNC_RUNFILE:-/tmp/sync_is_running}"; # don't run multiple sync jobs
-repoTracker="${CGIT_SYNC_LIST:-/tmp/sync_list_of_repos}"; # list of repos to sync, generated before each run
+errorList="${CGIT_SYNC_ERRORLIST:-/tmp/sync_errors.txt}";   # sync error catcher
 ignoreList="${CGIT_SYNC_IGNORELIST:-$repoDir/ignored.txt}"; # list of repos to ignore, format: <category>/<repo>.git
-errorList="${CGIT_SYNC_ERRORLIST:-$repoDir/errors.txt}"; # sync error catcher
-syncJobs="${CGIT_SYNC_JOBS:-1}"; # how many parallel jobs for synchronizing one git repo
+isRunning="${CGIT_SYNC_RUNFILE:-/tmp/sync_is_running}";     # don't run multiple sync jobs
+repoTracker="${CGIT_SYNC_LIST:-/tmp/sync_list_of_repos}";   # list of repos to sync, generated before each run, removed after
 
-if [ -e "$isRunning" ]; # don't run multiple sync jobs
+git_config="${CGIT_GITCONFIG:-/home/git/.gitconfig}"; # custom git config global (optional)
+maxDepth="${CGIT_REPOS_MAXDEPTH:-3}";                 # maximum depth to search for repositories to sync
+maxVM="${CGIT_SYNC_MAXVM:-1024000}";                  # set ulimit for git
+syncJobs="${CGIT_SYNC_JOBS:-2}";                      # how many parallel jobs for synchronizing one git repo
+
+shouldFSCK="${CGIT_SYNC_FSCK:-false}";     # whether to test integrity BEFORE fetch for all repos
+shouldFSCKFile="SYNC_NEED_FSCK";           # alternatively create a file named "SYNC_NEED_FSCK" inside a repo to fsck just for that repo
+shouldRepack="${CGIT_SYNC_REPACK:-false}"; # whether to repack AFTER fetch for all repos
+shouldRepackFile="SYNC_NEED_REPACK";       # alternatively create a file named "SYNC_NEED_REPACK" inside a repo to repack just for that repo
+
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+fflush   (){    echo "[$(fmtdt)]" > $1;               } # flush file
+eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
+iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info
+lecho    (){    echo "[$(fmtdt)] $@" >> "$errorList"; } # log error
+
+repoPath (){ # remove repoDir from full repo directory path, previously ${PWD##*/}
+    echo "${PWD##$repoDir/}";
+}
+
+repoSrc  (){ # select first non-push remote
+    git remote -v \
+    | grep -Ee '\((fetch|pull)\)' \
+    | head -n1 \
+    | awk '{print $2}';
+}
+
+if [ -f "${git_config}" ];
 then
-	echo "[$(date)] Still running previous instance. Kill it and remove $isRunning to start sync.";
-	exit 1;
+    iecho "Using global config ${git_config}";
+    export GIT_CONFIG_GLOBAL="${git_config}";
 fi;
 
-# start sync
-echo "$(date)" > $isRunning;
-echo "$(date)" > $errorList; # flush old errors from last run
+ulimit -v ${maxVM}; # limit amount of virtual memory
 
-oDir="$PWD"; # so we can get back to working dir after task done
+oPWD="${PWD}"; # so we can get back to working dir after task done
 
-# # sync clones
-#	  find "$repoDir" -maxdepth 3 2> /dev/null | grep -e '\/\.git$' | sort > /tmp/gitlist;
-#	  while read line;
-#	  do
-#		  cd $(readlink -f ${line%\.git}) ;
-#		  echo "===";
-#		  echo "[$(date)] Location: $PWD";
-#		  echo "Remotes:";
-#		  git remote -v | grep -e '(pull)';
-#		  git pull --all --force --tags --recurse-submodules --update-shallow --progress --allow-unrelated-histories;
-#		  echo "[$(date)] Done";
-#		  echo "===";
-#	  done < /tmp/gitlist;
-#	  rm -f /tmp/gitlist;
+totalRepos=0;   # total repos to sync
+needleRepo=0;   # index of repo currently being processed
+skippedRepos=0; # count of skipped repos
+doneRepos=0;    # count of synced repos
+failedRepos=0;  # count of failed repos
+warnRepos=0;    # count of repos synced with warnings
 
-# gather repo directories in ${tracker}
-find "$repoDir" -maxdepth 3 -type d 2> /dev/null \
-	| grep -e '\.git\/' \
-	| sed 's_\/[^\/]*$__' \
-	| sort -u \
-	> ${repoTracker};
-	# TODO: limit search e.g. grep -e 'gitorious\/' -e 'tex\/' -e 'work\/' |\
-	#
+checkResult () {
+    local task="$1"; # name of task
+    local xc=$2; # exit-code
+    local result=${@:3}; # result 2>&1
+    if [[ "${xc}" -eq 0 ]] \
+    && echo "${result}" | grep -qvEe '^(error|fatal|warning)\:';
+    then
+        iecho "${task} ok";
+        ((doneRepos++));
+    elif echo "${result}" | grep -qEe '^warning\:';
+    then
+        iecho "${task} ok (with warning)";
+        eecho "${result}";
+        ((doneRepos++)); # consided sync success
+        ((warnRepos++));
+        lecho "Warn ${task} $(repoPath)";
+    else
+        eecho "${task} failed";
+        eecho "${result}";
+        lecho "Fail ${task} $(repoPath)";
+        ((failedRepos++));
+    fi;
+}
 
-while read line;
-do
-	cd $(readlink -f $line) ;
-	# echo "[$(date)] Repo Location: ${PWD##*/}";
-	echo "[$(date)] Repo Location: ${PWD##$repoDir/}";
-	remotes="$(git remote -v | grep -e '(push)')";
+onExit () {
+    local xc=$?;
+    trap - EXIT;
+    showErrors; # show errors if any
+    # clean up
+    if [ -f "${repoTracker}" ]; then rm -f "${repoTracker}" && iecho "Removed file: ${repoTracker}"; fi;
+    if [ -f "${isRunning}" ];   then rm -f "${isRunning}"   && iecho "Removed file: ${isRunning}";   fi;
+    iecho "$0 exited with code ${xc}";
+    cd "${oPWD}"; # get back to working dir
+}
+trap onExit EXIT HUP INT QUIT PIPE TERM;
 
-	if [ -z "$remotes" ];
-	then
-		echo "[$(date)] No remote found";
-	else
-		echo "[$(date)] Remote URL: $remotes";
+runFetch () {
+    local remote=$(repoSrc);
+    # iecho "${remote}";
 
-		if grep -q "^${PWD##$repoDir/}" ${ignoreList};
-		then
-			echo "[$(date)] Repository ignored.";
-		else
-			git fetch \
-				--all \
-				--auto-gc \
-				--auto-maintenance \
-				--force \
-				--jobs $syncJobs \
-				--progress \
-				--recurse-submodules=yes \
-				--tags \
-				--update-shallow \
-				-k \
-			;
-			if [ ! $? -eq 0 ];
-			then
-				echo "[$(date)] Sync failed with error.";
-				echo "[$(date)] Repo Location: ${PWD##$repoDir/}" >> $errorList;
-			else
-				echo "[$(date)] Synced.";
-			fi;
-		fi;
-	fi;
+    if [ -z "${remote}" ];
+    then
+        eecho "SYNC skipped: No remote defined (bare-repo)";
+        ((skippedRepos++));
+    else
+        iecho "PULL ${remote}";
 
-	echo "==="; # spacer
-done < $repoTracker;
+        if grep -q "^$(repoPath)" ${ignoreList};
+        then
+            eecho "SYNC skipped: repository ignored";
+            ((skippedRepos++));
+        else
+            local RESULT=$(git fetch \
+                --all \
+                --auto-gc \
+                --auto-maintenance \
+                --force \
+                --jobs ${syncJobs} \
+                --progress \
+                --recurse-submodules=yes \
+                --tags \
+                --update-shallow \
+                -k \
+                2>&1 \
+            );
+            checkResult "SYNC" "$?" "${RESULT}";
+        fi;
+    fi;
+}
 
-rm -f $repoTracker $isRunning; # cleanup
+runFSCK () {
+    if [ -e "${shouldFSCKFile}" ]; then rm -f "${shouldFSCKFile}"; fi;
+    local RESULT=$(git fsck \
+        --full \
+        --strict \
+        --name-objects \
+        2>&1\
+    );
+    checkResult "FSCK" "$?" "${RESULT}";
+}
 
-cd "$oDir"; # get back to working dir
-echo "[$(date)] Done";
+runRepack () {
+    if [ -e "${shouldRepackFile}" ]; then rm -f "${shouldRepackFile}"; fi;
+    local RESULT=$(git repack \
+        -a \
+        -d \
+        --keep-unreachable \
+        --no-reuse-delta \
+        2>&1\
+    );
+    checkResult "PACK" "$?" "${RESULT}";
+}
+
+showErrors () {
+    echo;
+    eecho "==="; # spacer
+    eecho "Errors:";
+    eecho "==="; # spacer
+    cat "${errorList}"; # show errors
+    eecho "==="; # spacer
+}
+
+runSync () {
+    if [ -e "${isRunning}" ]; # don't run multiple sync jobs
+    then
+        eecho "Another running process detected";
+        eecho "Killing it now by removing ${isRunning}";
+        eecho "Run $0 again to (re)start sync";
+        exit 1;
+    fi;
+
+    fflush "${isRunning}"; # start sync
+    fflush "${errorList}"; # flush old errors from last run
+
+    # gather repo directories in ${repoTracker} and update totalrepos
+    # find
+    #   all directories till maxdepth
+    #   filter non-empty dirs ending in '.git' which actually contain subdirs (like branches/hooks/info/objects/refs etc)
+    #   remove subdirs (creates duplicate paths)
+    #   sort + uniq
+    find "${repoDir}" -maxdepth ${maxDepth} -type d 2> /dev/null \
+        | grep -e '\.git\/' \
+        | sed 's_\/[^\/]*$__' \
+        | sort -u \
+        > "${repoTracker}";
+        # TODO: limit search e.g. grep -e 'gitorious\/' -e 'tex\/' -e 'work\/' |\
+        #
+    totalRepos="$(cat ${repoTracker} | wc -l)";
+
+    if [[ ${totalRepos} -eq 0 ]]; then eecho "Nothing to sync"; exit 1; fi;
+
+    while read line;
+    do
+        # if ${isRunning} is removed, exit immediately
+        if [ ! -e "${isRunning}" ];
+        then
+            eecho "SYNC stopped.";
+            eecho "Runtime indicator file (${isRunning}) vanished.";
+            lecho "Exit SYNC reason: missing indicator ${isRunning}";
+            exit 1;
+        fi;
+
+        cd $(readlink -f ${line}); # get inside repo
+
+        ((needleRepo++));
+        iecho "REPO ${needleRepo}/${totalRepos} Fail:${failedRepos} Ok:${doneRepos} Skip:${skippedRepos} Warn:${warnRepos}";
+        iecho "PATH $(repoPath)";
+
+        # run integrity check if enabled via envvar or file
+        if [ "${shouldFSCK}" = "true" ] || [ -e "${shouldFSCKFile}" ]; then runFSCK; fi;
+
+        runFetch;
+
+        # run repack if enabled via envvar or file
+        if [ "${shouldRepack}" = "true" ] || [ -e "${shouldRepackFile}" ]; then runRepack; fi;
+
+        echo "==="; # spacer
+    done < "${repoTracker}";
+}
+
+# if not sourcing, run sync
+[[ "$0" == "$BASH_SOURCE" ]] && runSync $@;

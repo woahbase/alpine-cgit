@@ -1,62 +1,174 @@
 #!/bin/bash
+if [ -n "${DEBUG}" ]; then set -ex; fi;
 
-usageStr="Usage: (ba)sh $0";
+usageStr="Usage: (ba)sh $0 \$repourl \$description...";
 
 repoDir="${CGIT_REPODIR:-/home/git/repositories}"; # repositories root dir
+archiveDir="${CGIT_ARCHIVEDIR:-$CGIT_REPODIR/.archived}"; # archive dir (skipped when generating category list)
+git_config="${CGIT_GITCONFIG:-/home/git/.gitconfig}"; # custom git config global (optional)
+hooksDir="${CGIT_HOOKSDIR:-/defaults/hooks}"; # copy custom hooks from this dir
+maxDepth="${CGIT_REPOS_MAXDEPTH:-3}"; # maximum depth to search for repositories
 
-oDir="$PWD"; # so we can get back to working dir after task done
-cd "$repoDir";
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
+iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info
 
-# there can be either be multiple directory (as in categories) in repodir e.g
-#	_bare/	(for private projects)
-#	bitbucket/
-#	codeberg/
-#	github/
-#	gitlab/
-#	etc
-# or
-#  repos put directly inside repoDir
+urlToName () { # extract repo name from $1=url, remove ending slash if repo ends with /.git
+    echo "$1" \
+    | sed -r 's/.+\/([^.]+)(\.git)?/\1/' \
+    | sed -e 's/\/$//';
+}
 
-# check if any category dirs exist,
-# i.e. no directory ending with .git in repoDir
-if [ "$(find $repoDir -maxdepth 1 -type d | grep -qe '\.git$' && echo 1)" != "1" ];
+if [ -f "${git_config}" ];
 then
-	# select which dir to put the mirror repository in
-	select opt in $(ls -A --group-directories-first $repoDir);
-	do
-		if [ "$opt" != "" ];
-		then
-			cDir="$opt";
-			break;
-		fi;
-		echo "Invalid option."
-	done;
-
-	if [ ! -d "$repoDir/$cDir" ];
-	then
-		echo "Does not exist: $repoDir/$cDir";
-		exit 1;
-	fi;
-	cd "$repoDir/$cDir"; # repo will be cloned inside category dir
+    iecho "Using global config ${git_config}";
+    export GIT_CONFIG_GLOBAL="${git_config}";
 fi;
 
-read -p "URL:" cUrl; # clone url
-read -p "Description:" rDesc; # repo description
+repoUrl="$1";
+repoName="$(urlToName ${repoUrl}).git";
+repoDesc="${@:2}";
 
-# git clone --shared --recursive --progress "$cUrl";
-git clone \
-	--mirror \
-	--progress \
-	--shared \
-	"$cUrl" \
-;
+repoParentDir="${repoDir}"; # where repo will be created
+# defaults to ${repoDir}, category appended, if exists and chosen
 
-rName=${cUrl##*/}; # extract repo name from url
-rName=${rName%\.git}; # remove .git from name, if exists, we'll add it below
+chooseCategory () {
+    # there can be either multiple directories (as in repo categories) in repoDir e.g
+    #   _bare/  (for private projects)
+    #   bitbucket/
+    #   codeberg/
+    #   github/
+    #   gitlab/
+    #   etc
+    # or
+    #  repos put directly inside repoDir
 
-[[ -f "./$rName.git/description" ]] \
-	&& echo "$rDesc" > "./$rName.git/description" \
-	|| echo "No file: ./$rName.git/description";
+    # so we check if any category dirs exist in ${repoDir}, i.e.
+    # find all directories except
+    #   no directory containing .git
+    #   no directory in ${archiveDir}
+    #   not ${repoDir} itself
+    local categories=$(find "${repoDir}" -type d -maxdepth ${maxDepth} \
+        -not -ipath '*\.git*' -and \
+        -not -ipath "${archiveDir}*" -and \
+        -not -path "${repoDir}" 2>/dev/null);
+    local newCategory="+new"; # create a new category
+    local noCategory="+none"; # no category, make repo under ${repoDir}
 
-cd "$oDir"; # get back to working dir
-echo "Done";
+    # select category only if there is atleast one
+    if [[ "$(echo ${categories} | wc -l)" -gt 0 ]];
+    then
+        # choose which category dir to put the repository in
+        iecho "Select repo category (number):";
+        select opt in $(echo -e "${categories}\n${newCategory}\n${noCategory}" | sed -e "s_${repoDir}/__" | sort);
+        do
+            if [ "${opt}" != "" ] && [ -d "${repoDir}/${opt}" ];
+            then
+                repoParentDir="${repoDir}/${opt}";
+                break;
+            elif [ "${opt}" = "${newCategory}" ] && [ ! -d "${repoDir}/${opt}" ];
+            then
+                read -p "Category Name(required): " categ;
+                if [ -n "${categ}" ]; # can not be empty
+                then
+                    mkdir -p "${repoDir}/${categ}";
+                    repoParentDir="${repoDir}/${categ}";
+                    break;
+                fi;
+            elif [ "${opt}" = "${noCategory}" ] && [ ! -d "${repoDir}/${opt}" ];
+            then
+                repoParentDir="${repoDir}";
+                break;
+            fi;
+            eecho "Invalid repo category. Try again."
+        done;
+    fi;
+}
+
+copyHooks () {
+    local defext="${CGIT_HOOK_DEFAULT_EXTENSION:-.sample}"; # previously '-default'
+    if [ -n "${CGIT_HOOKS}" ]; # comma/space-separated list of hooks e.g "post-receive,post-update"
+    then
+        OLDIFS=${IFS};
+        IFS=' ,'; # separators can be comma and/or space
+        for hook in ${CGIT_HOOKS};
+        do
+            IFS=${OLDIFS};
+            if [ -f "${repoParentDir}/${repoName}/hooks/${hook}" ]; # hook exists
+            then # don't overwrite existing hook
+                echo "Hook \"${hook}\" already exists";
+            else
+                if [ -f "${hooksDir}/${hook}${defext}" ]; # hook exists in custom hooks dir
+                then # copy custom hook
+                    iecho "Copying custom hook \"${hook}\"";
+                    cp "${hooksDir}/${hook}${defext}" "${repoParentDir}/${repoName}/hooks/${hook}";
+                    chmod +x "${repoParentDir}/${repoName}/hooks/${hook}";
+
+                elif [ -f "${repoParentDir}/${repoName}/hooks/${hook}${defext}" ]; # hook exists in repo.git/hooks/
+                then # rename default hook
+                    iecho "Copying default hook \"${hook}\"";
+                    cp "${repoParentDir}/${repoName}/hooks/${hook}${defext}" "${repoParentDir}/${repoName}/hooks/${hook}";
+                    chmod +x "${repoParentDir}/${repoName}/hooks/${hook}";
+
+                else # hook not found
+                    iecho "Could not find hook \"${hook}${defext}\"";
+                fi;
+            fi;
+        done;
+        IFS=${OLDIFS};
+    fi;
+}
+
+setDescription () {
+    # if no description given as ${@:2}, try asking
+    if [ -z "${repoDesc}" ]; then read -p "Description: " repoDesc; fi;
+    # repo description, can be empty
+    if [ ! -d "${repoParentDir}/${repoName}" ];
+    then
+        eecho "No repo found at ${repoParentDir}/${repoName}";
+    elif [ -z "${repoDesc}" ]; # empty description
+    then
+        eecho "Skip setting repo description";
+    else
+        iecho "Setting repo description";
+        echo "${repoDesc}" > "${repoParentDir}/${repoName}/description";
+    fi;
+}
+
+makeMirror () {
+    chooseCategory; # select category if needed
+
+    if [ -z "${repoUrl}" ]; # no clone url given as $1, try asking
+    then
+        read -p "Repo URL(required): " repoUrl;
+        if [ -z "${repoUrl}" ]; # clone url is required
+        then
+            eecho "Repository URL is required";
+            iecho "$usageStr";
+            exit 1;
+        fi;
+        repoName="$(urlToName ${repoUrl}).git"; # update repoName
+    fi;
+
+    if [ -d "${repoParentDir}/${repoName}" ];
+    then
+        eecho "Repository exists. Won't overwrite.";
+        exit 1;
+    else
+        iecho "Cloning inside ${repoParentDir}";
+        # repo will be cloned inside repodir/<optional category dir if exists>
+        git clone \
+            --mirror \
+            --progress \
+            --shared \
+            "${repoUrl}" \
+            "${repoParentDir}/${repoName}" \
+        ; # git clone --shared --recursive --progress "${repoUrl}" "${repoParentDir}/${repoName}" ;
+        setDescription;
+        copyHooks;
+        iecho "Done";
+    fi;
+}
+
+# if not sourcing, make mirror
+[[ "$0" == "$BASH_SOURCE" ]] && makeMirror $@;
