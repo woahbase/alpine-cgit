@@ -19,10 +19,11 @@ fi;
 if [ ! -f "${SSHD_CONFDIR}/ssh_host_rsa_key"  ];
 then
     vecho "Generating SSHd host keys.";
-    ssh-keygen -t rsa     -b 1024 -N "" -f ${SSHD_CONFDIR}/ssh_host_rsa_key;
-    ssh-keygen -t dsa     -b 1024 -N "" -f ${SSHD_CONFDIR}/ssh_host_dsa_key;
-    ssh-keygen -t ecdsa   -b 521  -N "" -f ${SSHD_CONFDIR}/ssh_host_ecdsa_key;
-    ssh-keygen -t ed25519 -b 512  -N "" -f ${SSHD_CONFDIR}/ssh_host_ed25519_key;
+    ssh-keygen -t rsa        -b 1024 -N "" -f ${SSHD_CONFDIR}/ssh_host_rsa_key;
+    # openssh deprecated the default dsa key generation on 9.9
+    # ssh-keygen -t dsa        -b 1024 -N "" -f ${SSHD_CONFDIR}/ssh_host_dsa_key;
+    ssh-keygen -t ecdsa      -b 521  -N "" -f ${SSHD_CONFDIR}/ssh_host_ecdsa_key;
+    ssh-keygen -t ed25519    -b 512  -N "" -f ${SSHD_CONFDIR}/ssh_host_ed25519_key;
 fi;
 
 # set sshd configuration from environment vars i.e. /run/s6/container_environment/SSHD__<varname>
