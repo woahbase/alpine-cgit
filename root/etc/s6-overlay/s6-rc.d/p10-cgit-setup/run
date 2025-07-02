@@ -8,7 +8,7 @@ S6_USERHOME="${S6_USERHOME:-/home/$S6_USER}";
 
 CGIT_HOSTNAME="${CGIT_HOSTNAME:-localhost}";
 CGIT_REPODIR="${CGIT_REPODIR:-$S6_USERHOME/repositories}"; # set in Dockerfile
-CGIT_SUBPATH="${CGIT_SUBPATH:-/git}";
+# CGIT_SUBPATH="${CGIT_SUBPATH:-/git}"; # unset by default since it can also be ""
 
 LIGHTTPD_CONFDIR="${LIGHTTPD_CONFDIR:-/etc/lighttpd}";
 LIGHTTPD_LOGFILE="${LIGHTTPD_LOGFILE:-/var/log/lighttpd/lighttpd.log}";
@@ -16,9 +16,9 @@ LIGHTTPD_USER="${LIGHTTPD_USER:-lighttpd}";
 
 vecho "Ensure configuration directories exist.";
 mkdir -p \
-    ${CGIT_REPODIR} \
-    ${LIGHTTPD_CONFDIR} \
-    $(dirname ${LIGHTTPD_LOGFILE}) \
+    "${CGIT_REPODIR}" \
+    "${LIGHTTPD_CONFDIR}" \
+    "$(dirname ${LIGHTTPD_LOGFILE})" \
     ;
 
 # function to substitute paths in config files
@@ -41,36 +41,47 @@ then
 fi;
 
 # make sure lighttpd conf exists
-if [ ! -f ${LIGHTTPD_CONFDIR}/lighttpd.conf ];
+if [ ! -f "${LIGHTTPD_CONFDIR}/lighttpd.conf" ];
 then
     vecho "Setting up default Lighttpd configurations at ${LIGHTTPD_CONFDIR}/lighttpd.conf.";
-    _subst /defaults/lighttpd.conf ${LIGHTTPD_CONFDIR}/lighttpd.conf;
+    _subst /defaults/lighttpd.conf "${LIGHTTPD_CONFDIR}/lighttpd.conf";
 fi;
 
-if [ ! -f ${LIGHTTPD_CONFDIR}/cgit.conf ];
+if [ ! -f "${LIGHTTPD_CONFDIR}/cgit.conf" ];
 then
-    vecho "Setting up Lighttpd configurations for CGit at ${LIGHTTPD_CONFDIR}/cgit.conf.";
-    _subst /defaults/cgit.lighttpd.conf ${LIGHTTPD_CONFDIR}/cgit.conf;
+    vecho "Setting up default Lighttpd configurations for CGit at ${LIGHTTPD_CONFDIR}/cgit.conf (path: ${CGIT_SUBPATH}/).";
+    if [ "${CGIT_SUBPATH}" == "" ];
+    then
+        _subst /defaults/cgit.root.lighttpd.conf "${LIGHTTPD_CONFDIR}/cgit.conf";
+    else
+        _subst /defaults/cgit.subpath.lighttpd.conf "${LIGHTTPD_CONFDIR}/cgit.conf";
+    fi;
 fi;
 
 # fix permissions
-vecho "Fixing permissions.";
-chown ${S6_USER:-git}:${S6_USER:-git} \
-    $S6_USERHOME \
-    $CGIT_REPODIR \
-    ; # if not existing, docker mounts this dir as root:root
+if [ -z "${CGIT_SKIP_PERMFIX}" ] \
+&& [ "X${EUID}" == "X0" ]; # requires root
+then
+    vecho "Fixing permissions.";
+    chown ${S6_USER:-git}:${PGID:-1000} \
+        "${S6_USERHOME}" \
+        "${CGIT_REPODIR}" \
+        ; # if not existing, docker mounts this dir as root:root
 
-# ensure we can run scripts
-chown -R ${S6_USER:-git}:${S6_USER:-git} /scripts/;
-chmod +x /scripts/*;
+    # ensure we can run scripts
+    chown -R ${S6_USER:-git}:${PGID:-1000} /scripts/;
+    chmod +x /scripts/*;
+fi;
 
 # fix repo permissions
-if [ -n "${CGIT_PERMFIX_REPOS}" ]; # may become cumbersome if REPODIR has large number of repositories
+# may become cumbersome if REPODIR has large number of repositories
+if [ -n "${CGIT_PERMFIX_REPOS}" ] \
+&& [ "X${EUID}" == "X0" ]; # requires root
 then
     vecho "Fixing permissions on $CGIT_REPODIR repositories.";
     find "${CGIT_REPODIR}" \
         \! -user ${S6_USER:-git} -exec \
         chown --no-dereference \
-        ${S6_USER:-git}:${S6_USER:-git} \
+        ${S6_USER:-git}:${PGID:-1000} \
         '{}' +;
 fi;

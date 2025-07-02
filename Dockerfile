@@ -42,6 +42,8 @@ HEALTHCHECK \
     --start-period=5m \
     --timeout=10s \
     CMD \
-    wget --quiet --tries=1 --no-check-certificate --spider ${HEALTHCHECK_URL:-"http://localhost:80/git/"} || exit 1
+    wget --quiet --tries=1 --no-check-certificate --spider \
+    ${HEALTHCHECK_URL:-"http://localhost:80${CGIT_SUBPATH}/?p=about"} \
+    || exit 1
 #
 ENTRYPOINT ["/init"]

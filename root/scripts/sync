@@ -20,7 +20,7 @@ shouldFSCKFile="SYNC_NEED_FSCK";           # alternatively create a file named "
 shouldRepack="${CGIT_SYNC_REPACK:-false}"; # whether to repack AFTER fetch for all repos
 shouldRepackFile="SYNC_NEED_REPACK";       # alternatively create a file named "SYNC_NEED_REPACK" inside a repo to repack just for that repo
 
-fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S:%z";         } # date format
 fflush   (){    echo "[$(fmtdt)]" > $1;               } # flush file
 eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
 iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info

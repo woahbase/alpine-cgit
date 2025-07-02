@@ -63,7 +63,7 @@ local-time=1
 
 root-title=cGit
 root-desc=Keep ALL the stuff in VERSION CONTROL!!
-root-readme=/var/www/about.html
+#root-readme=/var/www/about.html
 #footer=/var/www/footer.html
 
 # if you do not want that webcrawler (like google) index your site
@@ -84,7 +84,7 @@ about-filter=/usr/lib/cgit/filters/about-formatting.sh
 snapshots=tar.gz zip
 
 # Specify some default clone urls using macro expansion
-clone-url=ssh://CGIT_USER@CGIT_HOSTNAME:64822CGIT_REPODIR/$CGIT_REPO_URL CGIT_USER@CGIT_HOSTNAME:CGIT_REPODIR/$CGIT_REPO_URL
+clone-url=ssh://CGIT_USER@CGIT_HOSTNAME:64822CGIT_REPODIR/$CGIT_REPO_URL http://CGIT_HOSTNAME:64801CGIT_SUBPATH/$CGIT_REPO_URL
 
 ##
 ## List of common mimetypes

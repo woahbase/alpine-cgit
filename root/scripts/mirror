@@ -9,7 +9,7 @@ git_config="${CGIT_GITCONFIG:-/home/git/.gitconfig}"; # custom git config global
 hooksDir="${CGIT_HOOKSDIR:-/defaults/hooks}"; # copy custom hooks from this dir
 maxDepth="${CGIT_REPOS_MAXDEPTH:-3}"; # maximum depth to search for repositories
 
-fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S:%z";         } # date format
 eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
 iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info
 
@@ -166,6 +166,17 @@ makeMirror () {
         ; # git clone --shared --recursive --progress "${repoUrl}" "${repoParentDir}/${repoName}" ;
         setDescription;
         copyHooks;
+
+        # set default gitweb properties e.g. homepage to remote
+        git --git-dir="${repoParentDir}/${repoName}" --bare config --local "gitweb.homepage" "${repoUrl}";
+        # edit the file '${repoParentDir}/${repoName}/config' to update
+        # supported keys:
+        #   gitweb.category,
+        #   gitweb.description
+        #   gitweb.homepage
+        #   gitweb.owner,
+        # optionally add cgit.* keys to override /etc/cgitrc config values just for for this repo
+
         iecho "Done";
     fi;
 }

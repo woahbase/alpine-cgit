@@ -10,7 +10,7 @@ maxDepth="${CGIT_REPOS_MAXDEPTH:-3}"; # maximum depth to search for repositories
 
 filter="$1"; # filter repos in directories, or by name
 
-fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S:%z";         } # date format
 eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
 iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info
 

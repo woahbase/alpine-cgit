@@ -9,7 +9,7 @@ git_config="${CGIT_GITCONFIG:-/home/git/.gitconfig}"; # custom git config global
 hooksDir="${CGIT_HOOKSDIR:-/defaults/hooks}"; # copy custom hooks from this dir
 maxDepth="${CGIT_REPOS_MAXDEPTH:-3}"; # maximum depth to search for repositories
 
-fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S%:z";         } # date format
+fmtdt    (){    date +"%Y-%m-%dT%H:%M:%S:%z";         } # date format
 eecho    (){>&2 echo "[$(fmtdt)] $@";                 } # echo error
 iecho    (){    echo "[$(fmtdt)] $@";                 } # echo info
 
